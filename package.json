@@ -1,0 +1,26 @@
+{
+  "name": "temalith",
+  "version": "1.0.0",
+  "description": "Monolithic Server for Temavrix Servicies.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node server.js"
+  },
+  "keywords": [
+    "Temalith"
+  ],
+  "author": "Temavrix",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "fetch": "^1.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.20.0",
+    "node-fetch": "^3.3.2",
+    "redis": "^5.9.0"
+  }
+}
