@@ -51,13 +51,18 @@ function authMiddleware(req, res, next) {
 
 
 // ===================== NEXAVIEW =====================
-const newapikey = "dffc1c2d7e1b50ff1ffd3a919d7d483b";
-const redisUrl =
-  "redis://default:l3O1mTYbXpZbsQX3U1WDYcxuBoZ9ZKmJ@redis-12456.crce194.ap-seast-1-1.ec2.redns.redis-cloud.com:12456";
+const newapikey = process.env.GNEWS_API_KEY;
+const redisUrl = process.env.REDIS_URL;
 
 const cli = createClient({ url: redisUrl });
 cli.on("error", (err) => console.error("Redis error:", err));
-await cli.connect();
+
+try {
+  await cli.connect();
+  console.log("✅ Redis connected");
+} catch (err) {
+  console.error("❌ Redis connection failed:", err.message);
+}
 
 // Available countries and categories
 const countries = ["us", "sg", "in"];
@@ -346,4 +351,8 @@ app.delete("/api/notes/:id", authMiddleware, async (req, res) => {
 
 
 // ================= START SERVER =================
-app.listen(process.env.PORT || 5000, () => console.log("🚀 Server running on port 5000"));
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
