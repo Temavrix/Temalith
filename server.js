@@ -53,6 +53,7 @@ function authMiddleware(req, res, next) {
 // ===================== NEXAVIEW =====================
 const newapikey = process.env.GNEWS_API_KEY;
 const redisUrl = process.env.REDIS_URL;
+const openWeatherKey = process.env.WEATHER_API;
 
 const cli = createClient({ url: redisUrl });
 cli.on("error", (err) => console.error("Redis error:", err));
@@ -63,6 +64,92 @@ try {
 } catch (err) {
   console.error("❌ Redis connection failed:", err.message);
 }
+
+const rediswea = (city) => `weather:${city.toLowerCase()}`;
+
+async function fetchAndStoreWeather(city) {
+  const openWeatherKey = process.env.WEATHER_API;
+  const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${openWeatherKey}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch weather for ${city}`);
+
+  const data = await response.json();
+
+  // Cache in Redis for 1 hour
+  await cli.set(rediswea(city), JSON.stringify(data), { EX: 60 * 60 });
+  console.log(`✅ Stored weather for: ${city}`);
+
+  return data;
+}
+
+// REST endpoint: /api/weather/:city
+app.get("/api/weather/:city", async (req, res) => {
+  const { city } = req.params;
+  const key = rediswea(city);
+
+  try {
+    // Check Redis cache first
+    const cached = await cli.get(key);
+    if (cached) {
+      console.log(`📦 Served from Redis: ${city}`);
+      return res.json(JSON.parse(cached));
+    }
+
+    // Fetch from OpenWeather API
+    const data = await fetchAndStoreWeather(city);
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+const redisForecastKey = (city) => `forecast:${city.toLowerCase()}`;
+
+// Fetch and cache 5-day forecast
+async function fetchAndStoreForecast(city) {
+  const openWeatherKey = process.env.WEATHER_API;
+  const url = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=metric&appid=${openWeatherKey}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch forecast for ${city}`);
+
+  const data = await response.json();
+
+  // Store in Redis for 1 hour (3600s)
+  await cli.set(redisForecastKey(city), JSON.stringify(data), { EX: 60 * 60 });
+  console.log(`✅ Stored forecast for: ${city}`);
+
+  return data;
+}
+
+// REST endpoint: /api/forecast/:city
+app.get("/api/forecast/:city", async (req, res) => {
+  const { city } = req.params;
+  const key = redisForecastKey(city);
+
+  try {
+    // Check cache first
+    const cached = await cli.get(key);
+    if (cached) {
+      console.log(`📦 Served forecast from Redis: ${city}`);
+      return res.json(JSON.parse(cached));
+    }
+
+    // Fetch from OpenWeather and cache
+    const data = await fetchAndStoreForecast(city);
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+
+
 
 // Available countries and categories
 const countries = ["us", "sg", "in"];

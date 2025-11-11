@@ -1,6 +1,6 @@
-# Temavrix Monolithic Server
+# Temavrix's Monolithic Server
 
-A Readme for our Single deployable server that exposes internal services (API, User Management, Database and Redis Managament etc.)
+Our Single deployable server that supports day to day operations of Temavrix's internal services such as APIs, User Management, Database and Redis Managament etc.
 
 ## Configuration
 - Use environment variables.
