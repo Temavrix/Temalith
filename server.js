@@ -2,6 +2,7 @@
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
+import axios from "axios";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { MongoClient, ObjectId } from "mongodb";
@@ -14,8 +15,70 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-let client;
-let db;
+const TIINGO_API_KEY = process.env.TIINGO_API_KEY;
+const redisUrl = process.env.REDIS_URL;
+
+// Redis client
+const cli = createClient({ url: redisUrl });
+cli.on("error", (err) => console.error("Redis error:", err));
+
+(async () => {
+  try {
+    await cli.connect();
+    console.log("Redis is connected");
+  } catch (err) {
+    console.error("ERROR: Redis connection failed:", err.message);
+  }
+})();
+
+// Redis key helper
+const redisStockKey = (symbol) => `stock:${symbol.toUpperCase()}`;
+
+// Fetch from Tiingo and store in Redis for 2 hours
+async function fetchAndStoreStock(symbol) {
+  const response = await axios.get(
+    `https://api.tiingo.com/tiingo/daily/${symbol}/prices`,
+    {
+      params: { token: TIINGO_API_KEY, resampleFreq: "daily" },
+    }
+  );
+
+  const lastPrice = response.data[0]?.close ?? null;
+
+  // Cache in Redis for 2 hours
+  await cli.set(redisStockKey(symbol), JSON.stringify(lastPrice), { EX: 3 * 60 * 60 });
+  console.log(`Stored stock in Redis for: ${symbol}`);
+
+  return lastPrice;
+}
+
+// REST endpoint
+app.get("/api/stocks", async (req, res) => {
+  try {
+    const SYMBOLS = ["AAPL", "TSLA", "MSFT", "GOOGL", "NVDA"];
+    const results = await Promise.all(
+      SYMBOLS.map(async (symbol) => {
+        // Check Redis cache first
+        const cached = await cli.get(redisStockKey(symbol));
+        if (cached) {
+          console.log(`Served from Redis: ${symbol}`);
+          return { symbol, price: JSON.parse(cached) };
+        }
+
+        // Fetch from Tiingo
+        const price = await fetchAndStoreStock(symbol);
+        return { symbol, price };
+      })
+    );
+
+    const prices = {};
+    results.forEach((r) => (prices[r.symbol] = r.price));
+
+    res.json(prices);
+  } catch (err) {
+    res.status(500).json({ error: "ERROR: Failed to fetch stocks" });
+  }
+});
 
 // ================= CONNECT DB =================
 async function connectDB() {
@@ -23,13 +86,13 @@ async function connectDB() {
         client = new MongoClient(process.env.ATLAS_URI);
         await client.connect();
         db = client.db("metodo");
-        console.log("✅ Connected to MongoDB");
+        console.log("Connected to MongoDB");
 
         try {
             await db.collection("users").createIndex({ email: 1 }, { unique: true });
-            console.log("✅ Email index ensured (unique)");
+            console.log("Email index ensured (unique)");
         } catch (err) {
-            console.error("⚠️ Index creation error:", err.message);
+            console.error("Index creation error:", err.message);
         }
     }
     return db;
@@ -52,18 +115,6 @@ function authMiddleware(req, res, next) {
 
 // ===================== NEXAVIEW =====================
 const newapikey = process.env.GNEWS_API_KEY;
-const redisUrl = process.env.REDIS_URL;
-const openWeatherKey = process.env.WEATHER_API;
-
-const cli = createClient({ url: redisUrl });
-cli.on("error", (err) => console.error("Redis error:", err));
-
-try {
-  await cli.connect();
-  console.log("✅ Redis connected");
-} catch (err) {
-  console.error("❌ Redis connection failed:", err.message);
-}
 
 const rediswea = (city) => `weather:${city.toLowerCase()}`;
 
@@ -77,7 +128,7 @@ async function fetchAndStoreWeather(city) {
 
   // Cache in Redis for 1 hour
   await cli.set(rediswea(city), JSON.stringify(data), { EX: 60 * 60 });
-  console.log(`✅ Stored weather for: ${city}`);
+  console.log(`Stored weather in Redis for: ${city}`);
 
   return data;
 }
@@ -91,7 +142,7 @@ app.get("/api/weather/:city", async (req, res) => {
     // Check Redis cache first
     const cached = await cli.get(key);
     if (cached) {
-      console.log(`📦 Served from Redis: ${city}`);
+      console.log(`Served from Redis for: ${city}`);
       return res.json(JSON.parse(cached));
     }
 
@@ -117,9 +168,9 @@ async function fetchAndStoreForecast(city) {
 
   const data = await response.json();
 
-  // Store in Redis for 1 hour (3600s)
-  await cli.set(redisForecastKey(city), JSON.stringify(data), { EX: 60 * 60 });
-  console.log(`✅ Stored forecast for: ${city}`);
+  // Store in Redis for 6 hours
+  await cli.set(redisForecastKey(city), JSON.stringify(data), { EX: 6 * 60 * 60 });
+  console.log(`Stored forecast in Redis for: ${city}`);
 
   return data;
 }
@@ -133,7 +184,7 @@ app.get("/api/forecast/:city", async (req, res) => {
     // Check cache first
     const cached = await cli.get(key);
     if (cached) {
-      console.log(`📦 Served forecast from Redis: ${city}`);
+      console.log(`Served forecast from Redis for: ${city}`);
       return res.json(JSON.parse(cached));
     }
 
@@ -165,23 +216,23 @@ async function fetchAndStoreNews(country, category) {
   if (!response.ok) throw new Error(`Failed for ${country}-${category}`);
   const data = await response.json();
   await cli.set(redisKey(country, category), JSON.stringify(data), { EX: 60 * 60 * 6 }); // expire after 6 hours
-  console.log(`✅ Stored: ${country}-${category}`);
+  console.log(`Stored: ${country}-${category}`);
   return data;
 }
 
 // Preload all news combinations (optional)
 async function preloadAllNews() {
-  console.log("🚀 Preloading news data...");
+  console.log("Preloading news data...");
   for (const country of countries) {
     for (const category of categories) {
       try {
         await fetchAndStoreNews(country, category);
       } catch (err) {
-        console.error(`❌ Failed: ${country}-${category}`, err.message);
+        console.error(`Failed: ${country}-${category}`, err.message);
       }
     }
   }
-  console.log("✅ Preloading complete.");
+  console.log("Preloading complete.");
 }
 
 // REST endpoint for specific country + category
@@ -192,7 +243,7 @@ app.get("/api/news/:country/:category", async (req, res) => {
   try {
     const cached = await cli.get(key);
     if (cached) {
-      console.log(`📦 Served from Redis: ${country}-${category}`);
+      console.log(`Served from Redis: ${country}-${category}`);
       return res.json(JSON.parse(cached));
     }
 
@@ -219,7 +270,7 @@ app.get("/api/curnews", async (req, res) => {
       return res.status(400).json({ error: "Missing API key" });
     }
 
-    const url = `https://newsapi.org/v2/everything?q=${term}&apiKey=${apikey}`;
+    const url = `https://newsapi.org/v2/everything?q=${term}&apiKey=${apikey}&lang=en`;
     const response = await fetch(url);
     const data = await response.json();
 
@@ -237,12 +288,12 @@ app.post("/api/register", async (req, res) => {
         const db = await connectDB();
 
         const existingUser = await db.collection("users").findOne({ email });
-        if (existingUser) return res.status(400).json({ msg: "User already exists ❌" });
+        if (existingUser) return res.status(400).json({ msg: "User already exists" });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         await db.collection("users").insertOne({ email, password: hashedPassword });
 
-        res.json({ msg: "Registered successfully ✅" });
+        res.json({ msg: "Registered successfully" });
     } catch (err) {
         console.error("Registration Error:", err.message);
         res.status(500).json({ msg: "Server error" });
@@ -256,10 +307,10 @@ app.post("/api/login", async (req, res) => {
         const db = await connectDB();
         const user = await db.collection("users").findOne({ email });
 
-        if (!user) return res.status(400).json({ msg: "User not found ❌" });
+        if (!user) return res.status(400).json({ msg: "ERROR: User not found" });
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ msg: "Invalid credentials ❌" });
+        if (!isMatch) return res.status(400).json({ msg: "ERROR: Invalid credentials" });
 
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
         res.json({ token });
@@ -298,7 +349,7 @@ app.post("/api/tasks", authMiddleware, async (req, res) => {
             completedAt: null
         };
         await db.collection("tasks").insertOne(newTask);
-        res.json({ msg: "Task added ✅" });
+        res.json({ msg: "Task added" });
     } catch (err) {
         console.error("Add Task Error:", err.message);
         res.status(500).json({ msg: "Server error" });
@@ -314,7 +365,7 @@ app.put("/api/tasks/:id/done", authMiddleware, async (req, res) => {
             userId: new ObjectId(req.user.id)
         });
 
-        if (!task) return res.status(404).json({ msg: "Task not found ❌" });
+        if (!task) return res.status(404).json({ msg: "Task not found" });
 
         const newDone = !task.done;
 
@@ -344,7 +395,7 @@ app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
             _id: new ObjectId(req.params.id), 
             userId: new ObjectId(req.user.id) 
         });
-        res.json({ msg: "Task deleted ✅" });
+        res.json({ msg: "Task deleted" });
     } catch (err) {
         console.error("Delete Task Error:", err.message);
         res.status(500).json({ msg: "Server error" });
@@ -441,5 +492,5 @@ app.delete("/api/notes/:id", authMiddleware, async (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server is currently running on port ${PORT}`);
 });
