@@ -4,7 +4,9 @@
   "description": "Monolithic Server for Temavrix Servicies.",
   "main": "index.js",
   "scripts": {
-    "test": "node server.js"
+    "dev": "tsx server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
   },
   "keywords": [
     "Temalith"
@@ -13,15 +15,21 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.13.2",
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "fetch": "^1.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "mongodb": "^6.20.0",
+    "googleapis": "^173.0.0",
     "node-fetch": "^3.3.2",
     "redis": "^5.9.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.1.1",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2"
   }
 }
