@@ -1,13 +1,32 @@
 import fs from "fs/promises";
 import path from "path";
 import { google } from "googleapis";
+import { db } from "./firebase";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
 ];
 
-const CREDENTIALS_PATH = path.join(__dirname, "credentials.json");
-const TOKEN_PATH = path.join(__dirname, "token.json");
+const CREDENTIALS_PATH =
+  process.env.GMAIL_CREDENTIALS_PATH ??
+  path.join(__dirname, "credentials.json");
+  
+async function saveToken(tokens: object) {
+  await db.collection("gmailTokens").doc("default").set({
+    tokens,
+  });
+}
+
+async function loadToken() {
+  const doc = await db
+    .collection("gmailTokens")
+    .doc("default")
+    .get();
+
+  if (!doc.exists) return null;
+
+  return doc.data()?.tokens ?? null;
+}
 
 interface CredentialsFile {
   installed?: {
@@ -65,10 +84,7 @@ export async function handleOAuthCallback(code: string) {
 
   oauth2Client.setCredentials(tokens);
 
-  await fs.writeFile(
-    TOKEN_PATH,
-    JSON.stringify(tokens, null, 2)
-  );
+  await saveToken(tokens);
 
   return oauth2Client;
 }
@@ -77,9 +93,11 @@ async function loadSavedCredentials() {
   try {
     const oauth2Client = await getOAuthClient();
 
-    const token = await fs.readFile(TOKEN_PATH, "utf8");
+    const token = await loadToken();
 
-    oauth2Client.setCredentials(JSON.parse(token));
+    if (!token) return null;
+
+    oauth2Client.setCredentials(token);
 
     return oauth2Client;
   } catch {
@@ -102,8 +120,6 @@ export async function getGmailService() {
       auth,
     });
   } catch {
-    await fs.rm(TOKEN_PATH, { force: true });
-
     throw new Error("TOKEN_EXPIRED");
   }
 }

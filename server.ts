@@ -1,267 +1,267 @@
-import express, { Request, Response} from "express";
-import fetch from "node-fetch";
+import express, {Request, Response} from "express";
+//import fetch from "node-fetch";
 import cors from "cors";
-import axios from "axios";
-import { createClient } from "redis";
+//import axios from "axios";
+//import { createClient } from "redis";
 import dotenv from "dotenv";
 import { getGmailService } from "./gmail";
 import { getAuthUrl } from "./gmail";
 import { handleOAuthCallback } from "./gmail";
 
 dotenv.config({ path: "config.env" });
-
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const TIINGO_API_KEY: string = process.env.TIINGO_API_KEY ?? "";
-const redisUrl: string = process.env.REDIS_URL ?? "";
-const newapikey = process.env.GNEWS_API_KEY ?? "";
-
-if (!TIINGO_API_KEY) {
-    throw new Error("Missing TIINGO_API_KEY");
-}
 
 
-// ===================== NEXAVIEW - REDIS =====================
-// Redis client
-const cli = createClient({
-  url: redisUrl,
-});
+//const TIINGO_API_KEY: string = process.env.TIINGO_API_KEY ?? "";
+//const redisUrl: string = process.env.REDIS_URL ?? "";
+//const newapikey = process.env.GNEWS_API_KEY ?? "";
+//
+//if (!TIINGO_API_KEY) {
+//    throw new Error("Missing TIINGO_API_KEY");
+//}
+ 
 
-cli.on("error", (err: Error) => {
-  console.error("Redis error:", err);
-});
-
-(async (): Promise<void> => {
-  try {
-    await cli.connect();
-    console.log("Redis is connected");
-  } catch (err) {
-    console.error(
-      "ERROR: Redis connection failed:",
-      err instanceof Error ? err.message : err
-    );
-  }
-})();
-
-
-// Redis Key Helpers
-const redisStockKey = (symbol: string): string =>
-  `stock:${symbol.toUpperCase()}`;
-
-const redisWeatherKey = (city: string): string =>
-  `weather:${city.toLowerCase()}`;
-
-const redisForecastKey = (city: string): string =>
-  `forecast:${city.toLowerCase()}`;
-
-const redisNewsKey = (
-  country: string,
-  category: string
-): string => `gnews:${country}:${category}`;
+//// ===================== NEXAVIEW - REDIS =====================
+//// Redis client
+//const cli = createClient({
+//  url: redisUrl,
+//});
+//
+//cli.on("error", (err: Error) => {
+//  console.error("Redis error:", err);
+//});
+//
+//(async (): Promise<void> => {
+//  try {
+//    await cli.connect();
+//    console.log("Redis is connected");
+//  } catch (err) {
+//    console.error(
+//      "ERROR: Redis connection failed:",
+//      err instanceof Error ? err.message : err
+//    );
+//  }
+//})();
 
 
-
-// Fetch from Stock from Tiingo and store in Redis for 2 hours
-async function fetchAndStoreStock(symbol: string): Promise<number | null> {
-  const response = await axios.get(
-    `https://api.tiingo.com/tiingo/daily/${symbol}/prices`,
-    {
-      params: {
-        token: TIINGO_API_KEY,
-        resampleFreq: "daily",
-      },
-    }
-  );
-
-  const lastPrice: number | null = response.data?.[0]?.close ?? null;
-
-  await cli.set(
-    redisStockKey(symbol),
-    JSON.stringify(lastPrice),
-    { EX: 3 * 60 * 60, }
-  );
-
-  return lastPrice;
-}
-
-
-// Stocks REST endpoint
-app.get("/api/stocks", async (req: Request, res: Response): Promise<void> => {
-    try {
-      const SYMBOLS = ["AAPL", "TSLA", "MSFT", "GOOGL", "NVDA"];
-
-      const results = await Promise.all(
-        SYMBOLS.map(async (symbol) => {
-          const cached = await cli.get(
-            redisStockKey(symbol)
-          );
-
-          if (cached) {
-            return {symbol, price: JSON.parse(cached),};
-          }
-
-          const price = await fetchAndStoreStock(symbol);
-          return { symbol, price };
-        })
-      );
-
-      const prices: Record<string, number | null> = {};
-
-      results.forEach((item) => {
-        prices[item.symbol] = item.price;
-      });
-
-      res.json(prices);
-    } catch {
-      res.status(500).json({
-        error: "ERROR: Failed to fetch stocks",
-      });
-    }
-  }
-);
+//// Redis Key Helpers
+//const redisStockKey = (symbol: string): string =>
+//  `stock:${symbol.toUpperCase()}`;
+//
+//const redisWeatherKey = (city: string): string =>
+//  `weather:${city.toLowerCase()}`;
+//
+//const redisForecastKey = (city: string): string =>
+//  `forecast:${city.toLowerCase()}`;
+//
+//const redisNewsKey = (
+//  country: string,
+//  category: string
+//): string => `gnews:${country}:${category}`;
 
 
 
-// Fetch and cache current Weather
-async function fetchAndStoreWeather(city: string) {
-  const openWeatherKey = process.env.WEATHER_API;
-  const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${openWeatherKey}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch weather for ${city}`);
-  const data = await response.json();
-
-  // Cache in Redis for 1 hour
-  await cli.set(redisWeatherKey(city), JSON.stringify(data), { EX: 60 * 60 });
-  console.log(`Stored weather in Redis for: ${city}`);
-  return data;
-}
-
-
-// REST endpoint: /api/weather/:city
-app.get("/api/weather/:city", async (req, res) => {
-  const { city } = req.params;
-  const key = redisWeatherKey(city);
-
-  try {
-    // Check Redis cache first
-    const cached = await cli.get(key);
-    if (cached) {
-      console.log(`Served from Redis for: ${city}`);
-      return res.json(JSON.parse(cached));
-    }
-
-    // Fetch from OpenWeather API
-    const data = await fetchAndStoreWeather(city);
-    res.json(data);
-  } catch (err: unknown) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
-});
+//// Fetch from Stock from Tiingo and store in Redis for 2 hours
+//async function fetchAndStoreStock(symbol: string): Promise<number | null> {
+//  const response = await axios.get(
+//    `https://api.tiingo.com/tiingo/daily/${symbol}/prices`,
+//    {
+//      params: {
+//        token: TIINGO_API_KEY,
+//        resampleFreq: "daily",
+//      },
+//    }
+//  );
+//
+//  const lastPrice: number | null = response.data?.[0]?.close ?? null;
+//
+//  await cli.set(
+//    redisStockKey(symbol),
+//    JSON.stringify(lastPrice),
+//    { EX: 3 * 60 * 60, }
+//  );
+//
+//  return lastPrice;
+//}
 
 
-
-// Fetch and cache 5-day forecast
-async function fetchAndStoreForecast(city: string) {
-  const openWeatherKey = process.env.WEATHER_API;
-  const url = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=metric&appid=${openWeatherKey}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch forecast for ${city}`);
-  const data = await response.json();
-
-  // Store in Redis for 6 hours
-  await cli.set(redisForecastKey(city), JSON.stringify(data), { EX: 6 * 60 * 60 });
-  console.log(`Stored forecast in Redis for: ${city}`);
-  return data;
-}
-
-
-
-// REST endpoint: /api/forecast/:city
-app.get("/api/forecast/:city", async (req, res) => {
-  const { city } = req.params;
-  const key = redisForecastKey(city);
-
-  try {
-    // Check cache first
-    const cached = await cli.get(key);
-    if (cached) {
-      console.log(`Served forecast from Redis for: ${city}`);
-      return res.json(JSON.parse(cached));
-    }
-
-    // Fetch from OpenWeather and cache
-    const data = await fetchAndStoreForecast(city);
-    res.json(data);
-  } catch (err: unknown) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
-});
+//// Stocks REST endpoint
+//app.get("/api/stocks", async (req: Request, res: Response): Promise<void> => {
+//    try {
+//      const SYMBOLS = ["AAPL", "TSLA", "MSFT", "GOOGL", "NVDA"];
+//
+//      const results = await Promise.all(
+//        SYMBOLS.map(async (symbol) => {
+//          const cached = await cli.get(
+//            redisStockKey(symbol)
+//          );
+//
+//          if (cached) {
+//            return {symbol, price: JSON.parse(cached),};
+//          }
+//
+//          const price = await fetchAndStoreStock(symbol);
+//          return { symbol, price };
+//        })
+//      );
+//
+//      const prices: Record<string, number | null> = {};
+//
+//      results.forEach((item) => {
+//        prices[item.symbol] = item.price;
+//      });
+//
+//      res.json(prices);
+//    } catch {
+//      res.status(500).json({
+//        error: "ERROR: Failed to fetch stocks",
+//      });
+//    }
+//  }
+//);
 
 
 
-// Fetch and store news for a given country/category
-async function fetchAndStoreNews(country: string, category: string) {
-  const url = `https://gnews.io/api/v4/top-headlines?category=${category}&lang=en&country=${country}&max=100&apikey=${newapikey}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed for ${country}-${category}`);
-  const data = await response.json();
-  await cli.set(redisNewsKey(country, category), JSON.stringify(data), { EX: 60 * 60 * 6 }); // expire after 6 hours
-  console.log(`Stored: ${country}-${category}`);
-  return data;
-}
+//// Fetch and cache current Weather
+//async function fetchAndStoreWeather(city: string) {
+//  const openWeatherKey = process.env.WEATHER_API;
+//  const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${openWeatherKey}`;
+//  const response = await fetch(url);
+//  if (!response.ok) throw new Error(`Failed to fetch weather for ${city}`);
+//  const data = await response.json();
+//
+//  // Cache in Redis for 1 hour
+//  await cli.set(redisWeatherKey(city), JSON.stringify(data), { EX: 60 * 60 });
+//  console.log(`Stored weather in Redis for: ${city}`);
+//  return data;
+//}
+
+
+//// REST endpoint: /api/weather/:city
+//app.get("/api/weather/:city", async (req, res) => {
+//  const { city } = req.params;
+//  const key = redisWeatherKey(city);
+//
+//  try {
+//    // Check Redis cache first
+//    const cached = await cli.get(key);
+//    if (cached) {
+//      console.log(`Served from Redis for: ${city}`);
+//      return res.json(JSON.parse(cached));
+//    }
+//
+//    // Fetch from OpenWeather API
+//    const data = await fetchAndStoreWeather(city);
+//    res.json(data);
+//  } catch (err: unknown) {
+//    console.error(err);
+//    const message = err instanceof Error ? err.message : String(err);
+//    res.status(500).json({ error: message });
+//  }
+//});
 
 
 
-// REST endpoint for specific country + category
-app.get("/api/news/:country/:category", async (req, res) => {
-  const { country, category } = req.params;
-  const key = redisNewsKey(country, category);
-
-  try {
-    const cached = await cli.get(key);
-    if (cached) {
-      console.log(`Served from Redis: ${country}-${category}`);
-      return res.json(JSON.parse(cached));
-    }
-
-    // Otherwise fetch fresh and store
-    const data = await fetchAndStoreNews(country, category);
-    res.json(data);
-  } catch (err: unknown) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
-});
+//// Fetch and cache 5-day forecast
+//async function fetchAndStoreForecast(city: string) {
+//  const openWeatherKey = process.env.WEATHER_API;
+//  const url = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=metric&appid=${openWeatherKey}`;
+//  const response = await fetch(url);
+//  if (!response.ok) throw new Error(`Failed to fetch forecast for ${city}`);
+//  const data = await response.json();
+//
+//  // Store in Redis for 6 hours
+//  await cli.set(redisForecastKey(city), JSON.stringify(data), { EX: 6 * 60 * 60 });
+//  console.log(`Stored forecast in Redis for: ${city}`);
+//  return data;
+//}
 
 
-// ===================== NEXAVIEW - CURATED NEWS =====================
-app.get("/api/curnews", async (req, res) => {
-  try {
-    const term = (req.query.term as string) ?? "Singapore";
-    const apikey = req.query.apikey as string | undefined;
 
-    if (!apikey) {
-      return res.status(400).json({ error: "Missing API key" });
-    }
+//// REST endpoint: /api/forecast/:city
+//app.get("/api/forecast/:city", async (req, res) => {
+//  const { city } = req.params;
+//  const key = redisForecastKey(city);
+//
+//  try {
+//    // Check cache first
+//    const cached = await cli.get(key);
+//    if (cached) {
+//      console.log(`Served forecast from Redis for: ${city}`);
+//      return res.json(JSON.parse(cached));
+//    }
+//
+//    // Fetch from OpenWeather and cache
+//    const data = await fetchAndStoreForecast(city);
+//    res.json(data);
+//  } catch (err: unknown) {
+//    console.error(err);
+//    const message = err instanceof Error ? err.message : String(err);
+//    res.status(500).json({ error: message });
+//  }
+//});
 
-    const url = `https://newsapi.org/v2/everything?q=${term}&apiKey=${apikey}&lang=en`;
-    const response = await fetch(url);
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    console.error("Error fetching news:", err);
-    res.status(500).json({ error: "Failed to fetch news" });
-  }
-});
 
+
+//// Fetch and store news for a given country/category
+//async function fetchAndStoreNews(country: string, category: string) {
+//  const url = `https://gnews.io/api/v4/top-headlines?category=${category}&lang=en&country=${country}&max=100&apikey=${newapikey}`;
+//  const response = await fetch(url);
+//  if (!response.ok) throw new Error(`Failed for ${country}-${category}`);
+//  const data = await response.json();
+//  await cli.set(redisNewsKey(country, category), JSON.stringify(data), { EX: 60 * 60 * 6 }); // expire after 6 hours
+//  console.log(`Stored: ${country}-${category}`);
+//  return data;
+//}
+
+
+
+//// REST endpoint for specific country + category
+//app.get("/api/news/:country/:category", async (req, res) => {
+//  const { country, category } = req.params;
+//  const key = redisNewsKey(country, category);
+//
+//  try {
+//    const cached = await cli.get(key);
+//    if (cached) {
+//      console.log(`Served from Redis: ${country}-${category}`);
+//      return res.json(JSON.parse(cached));
+//    }
+//
+//    // Otherwise fetch fresh and store
+//    const data = await fetchAndStoreNews(country, category);
+//    res.json(data);
+//  } catch (err: unknown) {
+//    console.error(err);
+//    const message = err instanceof Error ? err.message : String(err);
+//    res.status(500).json({ error: message });
+//  }
+//});
+
+
+//// ===================== NEXAVIEW - CURATED NEWS =====================
+//app.get("/api/curnews", async (req, res) => {
+//  try {
+//    const term = (req.query.term as string) ?? "Singapore";
+//    const apikey = req.query.apikey as string | undefined;
+//
+//    if (!apikey) {
+//      return res.status(400).json({ error: "Missing API key" });
+//    }
+//
+//    const url = `https://newsapi.org/v2/everything?q=${term}&apiKey=${apikey}&lang=en`;
+//    const response = await fetch(url);
+//    const data = await response.json();
+//    res.json(data);
+//  } catch (err) {
+//    console.error("Error fetching news:", err);
+//    res.status(500).json({ error: "Failed to fetch news" });
+//  }
+//});
 
 
 // ===================== NUVIN - GMAIL =====================
